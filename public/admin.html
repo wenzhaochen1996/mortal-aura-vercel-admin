@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mortal Aura Admin Dashboard</title>
+  <style>
+    body{margin:0;font-family:Inter,Arial,sans-serif;background:#050505;color:#f4f4f5}
+    .wrap{max-width:1200px;margin:0 auto;padding:24px}
+    .card{border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:20px;background:#111}
+    input,button,select{border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#0a0a0a;color:#fff;padding:10px 12px}
+    button{cursor:pointer}
+    table{width:100%;border-collapse:collapse}
+    td,th{border-bottom:1px solid rgba(255,255,255,.08);padding:10px;text-align:left;vertical-align:top}
+    .row{display:grid;gap:12px}.row.two{grid-template-columns:1fr 1fr}
+    .muted{color:#a1a1aa;font-size:12px}.hidden{display:none}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Mortal Aura Admin Dashboard</h1>
+    <p class="muted">Use a Supabase account that is also registered in the admin_users table.</p>
+    <div class="card" id="authCard">
+      <div class="row two">
+        <input id="email" placeholder="Email" />
+        <input id="password" type="password" placeholder="Password" />
+      </div>
+      <div style="margin-top:12px;display:flex;gap:12px">
+        <button id="loginBtn">Log in</button>
+        <button id="logoutBtn">Log out</button>
+      </div>
+      <p class="muted" id="authMsg"></p>
+    </div>
+
+    <div class="card hidden" id="ordersCard" style="margin-top:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <h2 style="margin:0">Orders</h2>
+        <button id="refreshBtn">Refresh</button>
+      </div>
+      <div id="ordersWrap" style="margin-top:14px"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+    const url = window.__SUPABASE_URL__ || localStorage.getItem('ma_supabase_url') || prompt('Supabase URL');
+    const key = window.__SUPABASE_ANON_KEY__ || localStorage.getItem('ma_supabase_key') || prompt('Supabase anon key');
+    localStorage.setItem('ma_supabase_url', url); localStorage.setItem('ma_supabase_key', key);
+    const supabase = createClient(url, key);
+    const authMsg = document.getElementById('authMsg');
+    const ordersCard = document.getElementById('ordersCard');
+    const ordersWrap = document.getElementById('ordersWrap');
+
+    async function token(){ const { data } = await supabase.auth.getSession(); return data.session?.access_token || ''; }
+    async function loadOrders(){
+      const t = await token();
+      const res = await fetch('/api/admin-orders', { headers: { Authorization: `Bearer ${t}` } });
+      const data = await res.json();
+      if (!res.ok) { authMsg.textContent = data.error || 'Failed'; return; }
+      ordersCard.classList.remove('hidden');
+      ordersWrap.innerHTML = `<table><thead><tr><th>Created</th><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Ship</th></tr></thead><tbody>${data.orders.map(o => `<tr><td>${new Date(o.created_at).toLocaleString()}</td><td>${o.id}<br><span class="muted">${(o.order_items||[]).map(i=>`${i.sku} × ${i.quantity}`).join('<br>')}</span></td><td>${o.shipping_name || '-'}<br><span class="muted">${o.email || ''}</span></td><td>¥${Number(o.total_jpy||0).toLocaleString()}</td><td>${o.status}<br><span class="muted">${o.payment_status}</span></td><td>${o.fulfillment_status}${o.tracking_number ? `<br><span class="muted">${o.tracking_number}</span>`:''}</td></tr>`).join('')}</tbody></table>`;
+    }
+
+    document.getElementById('loginBtn').onclick = async () => {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      authMsg.textContent = error ? error.message : 'Logged in';
+      if (!error) loadOrders();
+    };
+    document.getElementById('logoutBtn').onclick = async () => { await supabase.auth.signOut(); authMsg.textContent = 'Logged out'; ordersCard.classList.add('hidden'); };
+    document.getElementById('refreshBtn').onclick = loadOrders;
+    const { data } = await supabase.auth.getSession();
+    if (data.session) loadOrders();
+  </script>
+</body>
+</html>
